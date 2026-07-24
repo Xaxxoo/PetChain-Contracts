@@ -63,9 +63,7 @@ awk '
                 echo ""
                 ;;
             *add_user_two_factor_algorithm.sql)
-                # The base table already includes algorithm column, but we include
-                # this to document the migration history
-                echo "-- $basename (included for migration tracking; column already in CREATE TABLE)"
+                cat "$f"
                 echo ""
                 ;;
             *encrypt_existing_secrets.sql)

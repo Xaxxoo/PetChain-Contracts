@@ -168,10 +168,7 @@ pub fn sanitize_metadata(
     }
 
     // --- 2. Enforce total byte size ---
-    let byte_size: usize = metadata
-        .iter()
-        .map(|(k, v)| k.len() + v.len())
-        .sum();
+    let byte_size: usize = metadata.iter().map(|(k, v)| k.len() + v.len()).sum();
 
     if byte_size > METADATA_MAX_BYTES {
         let original_size = byte_size;
@@ -190,11 +187,7 @@ pub fn sanitize_metadata(
         eprintln!(
             "[WebhookManager] metadata truncated: byte size {} exceeded max {} \
              (reduced to {} bytes) event_type={} user_id={}",
-            original_size,
-            METADATA_MAX_BYTES,
-            current_size,
-            event_type,
-            user_id,
+            original_size, METADATA_MAX_BYTES, current_size, event_type, user_id,
         );
     }
 
@@ -273,7 +266,9 @@ pub fn validate_webhook_url(url: &str, allow_http: bool) -> Result<(), WebhookUr
 
     let host = parsed.host_str().ok_or(WebhookUrlError::MissingHost)?;
 
-    let port = parsed.port().unwrap_or(if scheme == "https" { 443 } else { 80 });
+    let port = parsed
+        .port()
+        .unwrap_or(if scheme == "https" { 443 } else { 80 });
     let addr_str = format!("{host}:{port}");
 
     if let Ok(addrs) = addr_str.to_socket_addrs() {
@@ -335,7 +330,10 @@ impl HttpClient for DefaultHttpClient {
         if response.status() >= 200 && response.status() < 300 {
             Ok(())
         } else {
-            Err(format!("server returned error status: {}", response.status()))
+            Err(format!(
+                "server returned error status: {}",
+                response.status()
+            ))
         }
     }
 }
@@ -356,14 +354,15 @@ impl HttpClient for DefaultHttpClient {
         let host = parsed
             .host_str()
             .ok_or_else(|| "URL has no host".to_string())?;
-        let port = parsed.port().unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
+        let port = parsed
+            .port()
+            .unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
 
         if parsed.scheme() == "https" {
-            eprintln!(
-                "[DefaultHttpClient] HTTPS not supported in default client; \
-                 inject a TLS-capable HttpClient for production. url={url}"
+            return Err(
+                "HTTPS not supported in the default client; inject a TLS-capable HttpClient"
+                    .to_string(),
             );
-            return Ok(());
         }
 
         let addr = format!("{host}:{port}");
@@ -380,11 +379,15 @@ impl HttpClient for DefaultHttpClient {
         stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
         stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
 
-        let path = if parsed.path().is_empty() {
-            "/"
+        let mut path = if parsed.path().is_empty() {
+            "/".to_string()
         } else {
-            parsed.path()
+            parsed.path().to_string()
         };
+        if let Some(query) = parsed.query() {
+            path.push('?');
+            path.push_str(query);
+        }
         let request = format!(
             "POST {path} HTTP/1.1\r\n\
              Host: {host}\r\n\
@@ -629,7 +632,9 @@ impl WebhookManager {
     ) {
         let urls = {
             let cfg = self.config.lock().unwrap();
-            cfg.get(&event_type.to_string()).cloned().unwrap_or_default()
+            cfg.get(&event_type.to_string())
+                .cloned()
+                .unwrap_or_default()
         };
         if urls.is_empty() {
             return;
@@ -699,7 +704,9 @@ impl WebhookManager {
     ) {
         let urls = {
             let cfg = self.config.lock().unwrap();
-            cfg.get(&event_type.to_string()).cloned().unwrap_or_default()
+            cfg.get(&event_type.to_string())
+                .cloned()
+                .unwrap_or_default()
         };
         if urls.is_empty() {
             return;
@@ -788,6 +795,8 @@ impl WebhookManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     struct MockHttpClient {
@@ -863,11 +872,7 @@ mod tests {
                 "http://example.com/hook".to_string(),
             )
             .unwrap();
-        manager.fire_sync(
-            SecurityEventType::RecoveryCodeUsed,
-            "user2",
-            HashMap::new(),
-        );
+        manager.fire_sync(SecurityEventType::RecoveryCodeUsed, "user2", HashMap::new());
         assert_eq!(mock.call_count.load(Ordering::SeqCst), 2);
         let log = manager.get_delivery_log(1, 10);
         assert!(log[0].success);
@@ -1001,6 +1006,56 @@ mod tests {
         assert!(matches!(result, Err(WebhookUrlError::DisallowedScheme(_))));
     }
 
+    #[cfg(not(feature = "webhook-client"))]
+    #[test]
+    fn test_default_http_client_rejects_https_without_tls() {
+        let client = DefaultHttpClient;
+        let err = client
+            .post("https://example.com/hook", "{}", "sig")
+            .expect_err("default client should reject HTTPS");
+        assert!(err.contains("HTTPS not supported"));
+    }
+
+    #[cfg(not(feature = "webhook-client"))]
+    #[test]
+    fn test_default_http_client_preserves_query_string() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let addr = listener.local_addr().expect("local addr");
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept request");
+            let mut request = Vec::new();
+            let mut buf = [0u8; 512];
+            loop {
+                let read = stream.read(&mut buf).expect("read request");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buf[..read]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            stream
+                .write_all(
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write response");
+            String::from_utf8(request).expect("utf8 request")
+        });
+
+        let client = DefaultHttpClient;
+        let url = format!("http://{addr}/hook?token=abc&x=1");
+        client
+            .post(&url, "{}", "sig")
+            .expect("request should succeed");
+
+        let request = handle.join().expect("server thread");
+        assert!(
+            request.starts_with("POST /hook?token=abc&x=1 HTTP/1.1"),
+            "request line should include the query string, got: {request:?}"
+        );
+    }
+
     #[test]
     fn test_configure_rejects_private_url() {
         let (manager, _mock) = make_manager(0);
@@ -1014,10 +1069,7 @@ mod tests {
     #[test]
     fn test_configure_rejects_invalid_url() {
         let manager = WebhookManager::default();
-        let result = manager.configure(
-            SecurityEventType::FailedTwoFa,
-            "not-a-url".to_string(),
-        );
+        let result = manager.configure(SecurityEventType::FailedTwoFa, "not-a-url".to_string());
         assert!(result.is_err());
     }
 
@@ -1200,10 +1252,17 @@ mod tests {
 
         manager.fire_sync(SecurityEventType::FailedTwoFa, "u1", HashMap::new());
 
-        assert_eq!(mock.call_count.load(Ordering::SeqCst), 3, "all 3 URLs should be called");
+        assert_eq!(
+            mock.call_count.load(Ordering::SeqCst),
+            3,
+            "all 3 URLs should be called"
+        );
         assert_eq!(manager.delivery_log_count(), 3);
         let log = manager.get_delivery_log(1, 10);
-        assert!(log.iter().all(|e| e.success), "all deliveries should succeed");
+        assert!(
+            log.iter().all(|e| e.success),
+            "all deliveries should succeed"
+        );
     }
 
     #[test]
@@ -1353,7 +1412,11 @@ mod tests {
         }
         let original_len = meta.len();
         let sanitized = sanitize_metadata(meta, "failed_two_fa", "user1");
-        assert_eq!(sanitized.len(), original_len, "under-limit map must be unchanged");
+        assert_eq!(
+            sanitized.len(),
+            original_len,
+            "under-limit map must be unchanged"
+        );
     }
 
     /// A map with exactly METADATA_MAX_ENTRIES entries must not be trimmed.
@@ -1391,10 +1454,7 @@ mod tests {
             meta.insert(format!("k{i:02}"), "x".repeat(128));
         }
         let sanitized = sanitize_metadata(meta, "recovery_code_used", "user5");
-        let byte_size: usize = sanitized
-            .iter()
-            .map(|(k, v)| k.len() + v.len())
-            .sum();
+        let byte_size: usize = sanitized.iter().map(|(k, v)| k.len() + v.len()).sum();
         assert!(
             byte_size <= METADATA_MAX_BYTES,
             "byte size {byte_size} must be <= METADATA_MAX_BYTES ({METADATA_MAX_BYTES})"
@@ -1436,6 +1496,9 @@ mod tests {
         manager.fire_sync(SecurityEventType::FailedTwoFa, "user1", meta);
         let log = manager.get_delivery_log(1, 10);
         assert_eq!(log.len(), 1);
-        assert!(log[0].success, "delivery should still succeed after truncation");
+        assert!(
+            log[0].success,
+            "delivery should still succeed after truncation"
+        );
     }
 }
