@@ -128,7 +128,6 @@ pub enum GroomingKey {
     PetScheduleIndex((u64, u64)),
     GroomerSlotIndex((Address, u64)),
     GroomerSlotCount(Address),
-
 }
 
 use soroban_sdk::xdr::{FromXdr, ToXdr};
@@ -138,19 +137,19 @@ use soroban_sdk::{
 };
 
 #[cfg(test)]
+mod test_behavior_records;
+#[cfg(test)]
 mod test_dispute_voting;
+#[cfg(test)]
+mod test_error_registry;
+#[cfg(test)]
+mod test_license_uniqueness;
+#[cfg(test)]
+mod test_nutrition_plan;
 #[cfg(test)]
 mod test_pet_birthday_validation;
 #[cfg(test)]
 mod test_verify_claim_document;
-#[cfg(test)]
-mod test_license_uniqueness;
-#[cfg(test)]
-mod test_error_registry;
-#[cfg(test)]
-mod test_behavior_records;
-#[cfg(test)]
-mod test_nutrition_plan;
 
 const DEFAULT_NONCE_MAX_USES: u32 = 1;
 #[allow(dead_code)]
@@ -270,7 +269,6 @@ pub enum ContractError {
     VeterinarianNotVerified = 33,
     SlotAlreadyBooked = 34,
     DuplicateActivity = 35,
-
 }
 
 // --- MULTI-LANGUAGE ERROR REGISTRY (Issue #684) ---
@@ -322,7 +320,6 @@ pub struct GroomingRecord {
     pub cost: u64,
     pub notes: String,
 }
-
 
 /// A bookable grooming slot indexed by groomer for conflict detection.
 #[contracttype]
@@ -547,9 +544,9 @@ pub enum NutritionKey {
     DailyNutritionSummary((u64, u64)), // (pet_id, date) -> DailyNutritionSummary
 
     // Ingredient-based nutrition plans (Issue #800)
-    NutritionPlan(u64),              // plan_id -> NutritionPlan
-    NutritionPlanCount,              // global count of plans
-    PetNutritionPlanCount(u64),      // pet_id -> count of plans
+    NutritionPlan(u64),                // plan_id -> NutritionPlan
+    NutritionPlanCount,                // global count of plans
+    PetNutritionPlanCount(u64),        // pet_id -> count of plans
     PetNutritionPlanIndex((u64, u64)), // (pet_id, index) -> plan_id
 }
 
@@ -2836,7 +2833,7 @@ impl PetChainContract {
 
     /// Captures a point-in-time snapshot of all key statistics for governance reporting.
     /// Requires multisig admin authorization.
-    /// 
+    ///
     /// The snapshot includes:
     /// - Total pets (all registered)
     /// - Active pets (currently activated)
@@ -2846,10 +2843,10 @@ impl PetChainContract {
     /// - Total vaccinations
     /// - Total insurance claims
     /// - Ledger timestamp
-    /// 
+    ///
     /// Maximum 100 snapshots are stored. When the 101st snapshot is taken,
     /// the oldest snapshot is purged automatically.
-    /// 
+    ///
     /// Returns: The snapshot ID for later retrieval.
     pub fn take_statistics_snapshot(env: Env, admin: Address) -> u64 {
         Self::require_admin_auth(&env, &admin);
@@ -2860,7 +2857,7 @@ impl PetChainContract {
             .instance()
             .get::<SystemKey, u64>(&SystemKey::SnapshotCount)
             .unwrap_or(0);
-        
+
         let snapshot_id = safe_increment(snapshot_count);
 
         // Gather total pets
@@ -2962,7 +2959,7 @@ impl PetChainContract {
         if snapshot_id > 100 {
             // The snapshot to purge is at the same index position (it's now the oldest)
             let snapshot_to_purge = snapshot_id - 100;
-            
+
             // Remove the old snapshot from storage
             env.storage()
                 .instance()
@@ -2974,7 +2971,7 @@ impl PetChainContract {
 
     /// Retrieves a statistics snapshot by its ID.
     /// This is a public function - no authorization required.
-    /// 
+    ///
     /// Returns: The snapshot if it exists, None otherwise.
     pub fn get_snapshot(env: Env, snapshot_id: u64) -> Option<StatisticsSnapshot> {
         env.storage()
@@ -3001,7 +2998,7 @@ impl PetChainContract {
             .unwrap_or(0);
 
         let mut snapshot_ids = Vec::new(&env);
-        
+
         if snapshot_count == 0 {
             return snapshot_ids;
         }
@@ -5888,13 +5885,10 @@ impl PetChainContract {
         let n = history.len() as i128;
         let sum: i128 = history.iter().fold(0i128, |acc, &v| acc.saturating_add(v));
         let mean = sum / n;
-        let variance = history
-            .iter()
-            .fold(0i128, |acc, &v| {
-                let diff = v.saturating_sub(mean);
-                acc.saturating_add(diff.saturating_mul(diff))
-            })
-            / n;
+        let variance = history.iter().fold(0i128, |acc, &v| {
+            let diff = v.saturating_sub(mean);
+            acc.saturating_add(diff.saturating_mul(diff))
+        }) / n;
         let stddev = Self::isqrt(variance);
         if stddev == 0 {
             return 0;
@@ -5940,7 +5934,11 @@ impl PetChainContract {
             let new_value = biomarkers.get(biomarker_name.clone()).unwrap();
 
             // Walk the most recent prior results (up to 10).
-            let window_start = if prior_count >= 10 { prior_count - 9 } else { 1 };
+            let window_start = if prior_count >= 10 {
+                prior_count - 9
+            } else {
+                1
+            };
             let mut history: [i128; 10] = [0i128; 10];
             let mut history_len: usize = 0;
 
@@ -5962,7 +5960,9 @@ impl PetChainContract {
                         }
                     }
                 }
-                if idx == 0 { break; }
+                if idx == 0 {
+                    break;
+                }
                 idx -= 1;
             }
 
@@ -6015,9 +6015,10 @@ impl PetChainContract {
         env.storage()
             .instance()
             .set(&MedicalKey::PetLabResultCount(pet_id), &new_pet_lab_count);
-        env.storage()
-            .instance()
-            .set(&MedicalKey::PetLabResultIndex((pet_id, new_pet_lab_count)), &lab_id);
+        env.storage().instance().set(
+            &MedicalKey::PetLabResultIndex((pet_id, new_pet_lab_count)),
+            &lab_id,
+        );
 
         lab_id
     }
@@ -6792,9 +6793,10 @@ impl PetChainContract {
         env.storage()
             .instance()
             .set(&NutritionKey::NutritionPlanCount, &plan_id);
-        env.storage()
-            .instance()
-            .set(&NutritionKey::PetNutritionPlanCount(pet_id), &next_pet_count);
+        env.storage().instance().set(
+            &NutritionKey::PetNutritionPlanCount(pet_id),
+            &next_pet_count,
+        );
         env.storage().instance().set(
             &NutritionKey::PetNutritionPlanIndex((pet_id, next_pet_count)),
             &plan_id,
@@ -8894,7 +8896,11 @@ impl PetChainContract {
         }
 
         // Verify groomer is registered
-        if !env.storage().instance().has(&GroomingKey::Groomer(groomer_id.clone())) {
+        if !env
+            .storage()
+            .instance()
+            .has(&GroomingKey::Groomer(groomer_id.clone()))
+        {
             panic_with_error!(env, ContractError::InvalidInput);
         }
 
@@ -8906,13 +8912,9 @@ impl PetChainContract {
             .unwrap_or(0);
 
         for i in 1u64..=slot_count {
-            if let Some(slot) = env
-                .storage()
-                .instance()
-                .get::<GroomingKey, GroomingSlot>(&GroomingKey::GroomerSlotIndex(
-                    (groomer_id.clone(), i),
-                ))
-            {
+            if let Some(slot) = env.storage().instance().get::<GroomingKey, GroomingSlot>(
+                &GroomingKey::GroomerSlotIndex((groomer_id.clone(), i)),
+            ) {
                 // Conflict: existing.start_time < new.start_time + new.duration_mins
                 //         && new.start_time < existing.start_time + existing.duration_mins
                 if slot.start_time < start_time.saturating_add(duration_mins * 60)
@@ -8940,9 +8942,10 @@ impl PetChainContract {
         };
 
         let new_count = slot_count.saturating_add(1);
-        env.storage()
-            .instance()
-            .set(&GroomingKey::GroomerSlotIndex((groomer_id.clone(), new_count)), &new_slot);
+        env.storage().instance().set(
+            &GroomingKey::GroomerSlotIndex((groomer_id.clone(), new_count)),
+            &new_slot,
+        );
         env.storage()
             .instance()
             .set(&GroomingKey::GroomerSlotCount(groomer_id), &new_count);
@@ -8959,20 +8962,14 @@ impl PetChainContract {
             .get(&GroomingKey::GroomerSlotCount(groomer_id.clone()))
             .unwrap_or(0);
         for i in 1u64..=count {
-            if let Some(slot) = env
-                .storage()
-                .instance()
-                .get::<GroomingKey, GroomingSlot>(&GroomingKey::GroomerSlotIndex(
-                    (groomer_id.clone(), i),
-                ))
-            {
+            if let Some(slot) = env.storage().instance().get::<GroomingKey, GroomingSlot>(
+                &GroomingKey::GroomerSlotIndex((groomer_id.clone(), i)),
+            ) {
                 slots.push_back(slot);
             }
         }
         slots
     }
-
-
 
     pub fn add_breed_metadata(
         env: Env,
@@ -9456,7 +9453,7 @@ impl PetChainContract {
         key_bytes[4..12].copy_from_slice(&pet_id.to_le_bytes());
         let rounded_duration = (duration_minutes / 10) as u64;
         key_bytes[12..20].copy_from_slice(&rounded_duration.to_le_bytes());
-        
+
         let idem_key = ActivityKey::ActivityIdempotencyKey(Bytes::from_array(&env, &key_bytes));
 
         // Check if key exists and is not expired
@@ -9469,9 +9466,7 @@ impl PetChainContract {
         }
 
         // Store idempotency key with current timestamp
-        env.storage()
-            .instance()
-            .set(&idem_key, &now);
+        env.storage().instance().set(&idem_key, &now);
 
         // Allocate new activity ID
         let activity_count: u64 = env
@@ -9507,9 +9502,10 @@ impl PetChainContract {
             .get(&ActivityKey::PetActivityCount(pet_id))
             .unwrap_or(0);
         let pet_index = safe_increment(pet_count);
-        env.storage()
-            .instance()
-            .set(&ActivityKey::PetActivityIndex((pet_id, pet_index)), &activity_id);
+        env.storage().instance().set(
+            &ActivityKey::PetActivityIndex((pet_id, pet_index)),
+            &activity_id,
+        );
         env.storage()
             .instance()
             .set(&ActivityKey::PetActivityCount(pet_id), &pet_index);
@@ -9540,7 +9536,7 @@ impl PetChainContract {
         // Note: In a production system, maintain a separate index of active keys
         // For now, we rely on external processes to call this periodically
         // The actual purging happens lazily during add_activity_record checks
-        
+
         purged
     }
 } // end impl PetChainContract
@@ -9639,8 +9635,8 @@ fn xor_stream_crypt(env: &Env, input: &Bytes, key: &Bytes, nonce: &Bytes) -> Byt
 #[cfg(test)]
 mod test_lab_result_anomaly {
     use crate::{
-        Gender, LabResultAnomaly, PetChainContract, PetChainContractClient, PrivacyLevel,
-        Species, EVENT_SCHEMA_VERSION,
+        Gender, LabResultAnomaly, PetChainContract, PetChainContractClient, PrivacyLevel, Species,
+        EVENT_SCHEMA_VERSION,
     };
     use soroban_sdk::{
         testutils::{Address as _, Events, Ledger as _},
