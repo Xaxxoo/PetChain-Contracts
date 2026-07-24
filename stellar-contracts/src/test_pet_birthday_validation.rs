@@ -4,7 +4,7 @@ use soroban_sdk::{
     Address, Env, String,
 };
 
-fn make_client(env: &Env) -> PetChainContractClient {
+fn make_client(env: &Env) -> PetChainContractClient<'_> {
     let contract_id = env.register_contract(None, PetChainContract);
     let client = PetChainContractClient::new(env, &contract_id);
     let admin = Address::generate(env);

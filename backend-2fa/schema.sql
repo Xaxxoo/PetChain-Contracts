@@ -8,9 +8,16 @@
 --
 -- The migrations/ directory is the single source of truth for the database schema.
 
+
 -- ---------------------------------------------------------------------------
--- Migration 001: Schema migrations tracking table
+-- NOTE: This section is auto-generated from the migration files.
+-- Do not edit by hand. Run scripts/generate-schema.sh to regenerate.
 -- ---------------------------------------------------------------------------
+
+-- 001_create_schema_migrations.sql
+-- Creates the schema_migrations tracking table that the migration runner
+-- uses to track which migrations have been applied.
+
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version     INTEGER PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -18,11 +25,9 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     checksum    TEXT NOT NULL
 );
 
--- ---------------------------------------------------------------------------
--- Migration 002: Base 2FA tables
--- ---------------------------------------------------------------------------
+-- 002_create_base_tables.sql
+-- Creates the base 2FA tables from the schema.
 
--- Table to store user 2FA settings
 CREATE TABLE IF NOT EXISTS user_two_factor (
     user_id VARCHAR(255) PRIMARY KEY,
     secret TEXT NOT NULL,
@@ -35,7 +40,6 @@ CREATE TABLE IF NOT EXISTS user_two_factor (
 
 CREATE INDEX IF NOT EXISTS idx_user_two_factor_enabled ON user_two_factor(enabled);
 
--- Table to audit recovery code usage (single-use enforcement)
 CREATE TABLE IF NOT EXISTS recovery_code_usage (
     id SERIAL PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,
@@ -46,7 +50,6 @@ CREATE TABLE IF NOT EXISTS recovery_code_usage (
     UNIQUE(user_id, code_index)
 );
 
--- Audit log for 2FA admin actions and security events (Issue #688, #713)
 CREATE TABLE IF NOT EXISTS two_fa_audit_log (
     id SERIAL PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,
@@ -59,15 +62,19 @@ CREATE TABLE IF NOT EXISTS two_fa_audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON two_fa_audit_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON two_fa_audit_log(timestamp DESC);
 
--- Canary token accounts (Issue #713)
 CREATE TABLE IF NOT EXISTS canary_accounts (
     user_id VARCHAR(255) PRIMARY KEY,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- ---------------------------------------------------------------------------
--- Migration 002 (supplemental): IP access list (Issue #701)
--- ---------------------------------------------------------------------------
+ALTER TABLE user_two_factor
+    ADD COLUMN IF NOT EXISTS algorithm VARCHAR(16) NOT NULL DEFAULT 'SHA1';
+
+-- 002_create_ip_access_list.sql
+-- Creates the ip_access_list table backing the admin IP allowlist/blocklist
+-- endpoints (Issue #701). Entries are matched by CIDR containment in
+-- application code; list_type distinguishes allow vs. block rules.
+
 CREATE TABLE IF NOT EXISTS ip_access_list (
     id          BIGSERIAL PRIMARY KEY,
     cidr        TEXT NOT NULL,
@@ -79,11 +86,28 @@ CREATE TABLE IF NOT EXISTS ip_access_list (
 
 CREATE INDEX IF NOT EXISTS idx_ip_access_list_type ON ip_access_list(list_type);
 
--- ---------------------------------------------------------------------------
--- Persistent 2FA lockout state (not yet migration-tracked)
--- Redis stores the hot failure counter, but this table is the source of truth
--- for full account lockout after 10 failures.
--- ---------------------------------------------------------------------------
+-- 005_encrypt_existing_secrets.sql
+-- Migration 005: Document encrypted secret storage requirement
+--
+-- MANUAL RE-ENCRYPTION REQUIRED FOR EXISTING RECORDS:
+-- Existing plain-text secrets in `user_two_factor.secret` must be re-encrypted
+-- before deploying application code that reads them as AES-256-GCM ciphertext.
+--
+-- Steps:
+--   1. Set TOTP_ENCRYPTION_KEY in your secret store (64 hex chars = 32 bytes).
+--   2. Run the provided migration script (scripts/encrypt_existing_secrets.py)
+--      which reads each row, encrypts the secret with AES-256-GCM, and writes
+--      back the ciphertext in the format `<nonce_hex>:<ciphertext_hex>`.
+--   3. Only then deploy the new application binary.
+--
+-- There is intentionally no automatic SQL transformation here because the
+-- encryption key is not available to the database engine.
+--
+-- This migration is a no-op at the SQL level; its purpose is to document
+-- the required operational step in the migration history.
+SELECT 1;
+
+-- Table: two_fa_lockouts (not yet migration-tracked)
 CREATE TABLE IF NOT EXISTS two_fa_lockouts (
     user_id VARCHAR(255) PRIMARY KEY,
     failed_attempts INT NOT NULL DEFAULT 0,
@@ -91,4 +115,3 @@ CREATE TABLE IF NOT EXISTS two_fa_lockouts (
     locked_at TIMESTAMP NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-

@@ -30,8 +30,7 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Run cargo audit
-        working-directory: stellar-contracts
-        run: cargo audit --deny warnings
+        run: cargo audit --manifest-path stellar-contracts/Cargo.toml --deny warnings
 
   coverage:
     runs-on: ubuntu-latest
